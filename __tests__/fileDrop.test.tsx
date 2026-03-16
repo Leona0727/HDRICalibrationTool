@@ -25,107 +25,200 @@ multiple file cases:
 
 //determine assertions as we write the tests for each case
 
-import React from "react"
-import { render, screen } from "@testing-library/react"
-import { describe, it, expect, vi, beforeEach } from "vitest"
+import path from "path"
 
-import Home from "./src/app/home-page/page.tsx"
-import { mockFileDrop } from "./fileDrop.tsx"
+describe("HDRI file drop pipeline test", () => {
 
-const mockSet = vi.fn()
-vi.mock("./src/app/home-page/(pipeline-configuration)/config-provider.tsx", () => ({
-  useGlobalPipelineConfig: () => ({ config: { inputSets: [] }, set: mockSet })
-}))
+  let dropArea
 
-describe("File Drop Frontend 9 Cases", () => {
 
-  beforeEach(() => {
-    mockSet.mockClear()
+  beforeEach(async () => {
+
+    // open tauri window
+    await browser.url("/")
+
+    // find drop area
+    dropArea = await $('[data-testid="dropzone-root"]')
+
+    await dropArea.waitForExist()
+
   })
 
-  it("1. single valid file", () => {
-    render(<Home />)
-    const dropzone = screen.getByTestId("dropzone")
-    mockFileDrop(dropzone, [{ name: "good.hdr", content: "valid" }])
-    expect(mockSet).toHaveBeenCalled()
+
+  // helper function to simulate file drop
+  async function fileDrop(files){
+
+    const remote = []
+
+    for(const file of files){
+
+      const uploaded = await browser.uploadFile(file)
+
+      remote.push(uploaded)
+
+    }
+
+    await dropArea.addValue(remote)
+
+  }
+
+
+
+  // 1 valid extension and valid content
+  it("valid extension + valid content", async () => {
+
+    const file = path.join(process.cwd(),"tests/assets/valid.cal")
+
+    await fileDrop([file])
+
+    const preview = await $("canvas")
+
+    await expect(preview).toBeExisting()
+
   })
 
-  it("2. single valid extension but invalid content", () => {
-    render(<Home />)
-    const dropzone = screen.getByTestId("dropzone")
-    mockFileDrop(dropzone, [{ name: "good.hdr", content: "corrupt" }])
-    expect(mockSet).not.toHaveBeenCalled()
+
+
+  // 2 valid extension invalid content
+  it("valid extension + invalid content", async () => {
+
+    const file = path.join(process.cwd(),"tests/assets/invalid.cal")
+
+    await fileDrop([file])
+
+    const error = await $(".error")
+
+    await expect(error).toBeExisting()
+
   })
 
-  it("3. single invalid extension", () => {
-    render(<Home />)
-    const dropzone = screen.getByTestId("dropzone")
-    mockFileDrop(dropzone, [{ name: "bad.txt", content: "data" }])
-    expect(mockSet).not.toHaveBeenCalled()
+
+
+  // 3 invalid extension
+  it("invalid extension", async () => {
+
+    const file = path.join(process.cwd(),"tests/assets/file.txt")
+
+    await fileDrop([file])
+
+    const error = await $(".error")
+
+    await expect(error).toBeExisting()
+
   })
 
-  it("4. single directory input", () => {
-    render(<Home />)
-    const dropzone = screen.getByTestId("dropzone")
-    mockFileDrop(dropzone, [{ name: "folder/", content: "" }])
-    expect(mockSet).not.toHaveBeenCalled()
+
+
+  // 4 directory input
+  it("directory input", async () => {
+
+    const file = path.join(process.cwd(),"tests/assets/folder")
+
+    await fileDrop([file])
+
+    const error = await $(".error")
+
+    await expect(error).toBeExisting()
+
   })
 
-  it("5. multiple files over max batch size", () => {
-    render(<Home />)
-    const dropzone = screen.getByTestId("dropzone")
-    const files = Array(50).fill(0).map((_, i) => ({ name: `img${i}.hdr`, content: "valid" }))
-    mockFileDrop(dropzone, files)
-    expect(mockSet).not.toHaveBeenCalled() // assuming batch limit
+
+
+  // 5 over max batch size
+  it("batch size overflow", async () => {
+
+    const files = []
+
+    for(let i=0;i<10;i++){
+
+      files.push(
+        path.join(process.cwd(),`tests/assets/file${i}.cal`)
+      )
+
+    }
+
+    await fileDrop(files)
+
+    const error = await $(".error")
+
+    await expect(error).toBeExisting()
+
   })
 
-  it("6. multiple all valid files", () => {
-    render(<Home />)
-    const dropzone = screen.getByTestId("dropzone")
+
+
+  // 6 all valid
+  it("all files valid", async () => {
+
     const files = [
-      { name: "1.hdr", content: "valid" },
-      { name: "2.hdr", content: "valid" },
-      { name: "3.hdr", content: "valid" }
+      path.join(process.cwd(),"tests/assets/a.cal"),
+      path.join(process.cwd(),"tests/assets/b.cal")
     ]
-    mockFileDrop(dropzone, files)
-    expect(mockSet).toHaveBeenCalled()
+
+    await fileDrop(files)
+
+    const preview = await $("canvas")
+
+    await expect(preview).toBeExisting()
+
   })
 
-  it("7. multiple all invalid files", () => {
-    render(<Home />)
-    const dropzone = screen.getByTestId("dropzone")
+
+
+  // 7 all invalid
+  it("all files invalid", async () => {
+
     const files = [
-      { name: "1.txt", content: "" },
-      { name: "2.doc", content: "" }
+      path.join(process.cwd(),"tests/assets/a.txt"),
+      path.join(process.cwd(),"tests/assets/b.txt")
     ]
-    mockFileDrop(dropzone, files)
-    expect(mockSet).not.toHaveBeenCalled()
+
+    await fileDrop(files)
+
+    const error = await $(".error")
+
+    await expect(error).toBeExisting()
+
   })
 
-  it("8. 1 invalid, rest valid (4 files)", () => {
-    render(<Home />)
-    const dropzone = screen.getByTestId("dropzone")
+
+
+  // 8 one invalid rest valid
+  it("1 invalid 3 valid", async () => {
+
     const files = [
-      { name: "good1.hdr", content: "valid" },
-      { name: "good2.hdr", content: "valid" },
-      { name: "good3.hdr", content: "valid" },
-      { name: "bad.txt", content: "" }
+      path.join(process.cwd(),"tests/assets/a.cal"),
+      path.join(process.cwd(),"tests/assets/b.cal"),
+      path.join(process.cwd(),"tests/assets/c.cal"),
+      path.join(process.cwd(),"tests/assets/bad.txt")
     ]
-    mockFileDrop(dropzone, files)
-    expect(mockSet).toHaveBeenCalled()
+
+    await fileDrop(files)
+
+    const preview = await $("canvas")
+
+    await expect(preview).toBeExisting()
+
   })
 
-  it("9. 1 valid, rest invalid (4 files)", () => {
-    render(<Home />)
-    const dropzone = screen.getByTestId("dropzone")
+
+
+  // 9 one valid rest invalid
+  it("1 valid rest invalid", async () => {
+
     const files = [
-      { name: "good.hdr", content: "valid" },
-      { name: "bad1.txt", content: "" },
-      { name: "bad2.doc", content: "" },
-      { name: "bad3.doc", content: "" }
+      path.join(process.cwd(),"tests/assets/a.cal"),
+      path.join(process.cwd(),"tests/assets/bad1.txt"),
+      path.join(process.cwd(),"tests/assets/bad2.txt"),
+      path.join(process.cwd(),"tests/assets/bad3.txt")
     ]
-    mockFileDrop(dropzone, files)
-    expect(mockSet).toHaveBeenCalled()
+
+    await fileDrop(files)
+
+    const preview = await $("canvas")
+
+    await expect(preview).toBeExisting()
+
   })
 
 })
