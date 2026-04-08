@@ -31,194 +31,321 @@ describe("HDRI file drop pipeline test", () => {
 
   let dropArea
 
-
   beforeEach(async () => {
-
     // open tauri window
     await browser.url("/")
 
     // find drop area
     dropArea = await $('[data-testid="dropzone-root"]')
 
-    await dropArea.waitForExist()
-
+    await dropArea.waitForExist({ timeout: 5000 })
   })
 
+  // ============================================================================
+  // HELPER FUNCTIONS
+  // ============================================================================
 
-  // helper function to simulate file drop
-  async function fileDrop(files){
-
+  /**
+   * Simulates a file drop event on the dropzone area
+   * Handles file upload for WebdriverIO and triggers the drop event
+   * 
+   * @param files - Array of file paths to drop
+   */
+  async function simulateFileDrop(files: string[]) {
     const remote = []
 
-    for(const file of files){
-
+    for (const file of files) {
       const uploaded = await browser.uploadFile(file)
-
       remote.push(uploaded)
-
     }
 
     await dropArea.addValue(remote)
-
   }
 
+  /**
+   * Checks if a toast/error notification exists
+   * @returns Promise<boolean> - true if error toast is found
+   */
+  async function hasErrorNotification(): Promise<boolean> {
+    try {
+      const error = await $('[role="alert"][class*="error"]')
+      await error.waitForExist({ timeout: 3000 })
+      return true
+    } catch {
+      return false
+    }
+  }
 
+  /**
+   * Checks if a canvas preview exists (indicating successful file load)
+   * @returns Promise<boolean> - true if canvas is found
+   */
+  async function hasCanvasPreview(): Promise<boolean> {
+    try {
+      const canvas = await $("canvas")
+      await canvas.waitForExist({ timeout: 5000 })
+      return true
+    } catch {
+      return false
+    }
+  }
 
-  // 1 valid extension and valid content
-  it("valid extension + valid content", async () => {
+  /**
+   * Gets the current error message from the notification
+   * @returns Promise<string> - error message text
+   */
+  async function getErrorMessage(): Promise<string> {
+    try {
+      const error = await $('[role="alert"][class*="error"]')
+      return await error.getText()
+    } catch {
+      return ""
+    }
+  }
 
-    const file = path.join(process.cwd(),"tests/assets/valid.cal")
+  /**
+   * Clears the current file/state for the next test
+   */
+  async function clearState() {
+    try {
+      const clearBtn = await $('[data-testid="clear-button"]')
+      if (await clearBtn.isExisting()) {
+        await clearBtn.click()
+        await browser.pause(500)
+      }
+    } catch {
+      // Button may not exist, that's ok
+    }
+  }
 
-    await fileDrop([file])
+  // ============================================================================
+  // INDIVIDUAL FILE TEST CASES
+  // ============================================================================
 
-    const preview = await $("canvas")
+  /**
+   * TEST CASE 1: Valid extension + Valid content
+   * Expected: Canvas preview should render successfully
+   */
+  it("TC1: valid extension + valid content", async () => {
+    const file = path.join(process.cwd(), "tests/assets/valid.cal")
 
-    await expect(preview).toBeExisting()
+    await simulateFileDrop([file])
 
+    const hasPreview = await hasCanvasPreview()
+    expect(hasPreview).toBe(true)
+
+    const hasError = await hasErrorNotification()
+    expect(hasError).toBe(false)
+
+    await clearState()
   })
 
+  /**
+   * TEST CASE 2: Valid extension + Invalid content
+   * Expected: Error notification should appear, no canvas
+   */
+  it("TC2: valid extension + invalid content", async () => {
+    const file = path.join(process.cwd(), "tests/assets/invalid.cal")
 
+    await simulateFileDrop([file])
 
-  // 2 valid extension invalid content
-  it("valid extension + invalid content", async () => {
+    const hasError = await hasErrorNotification()
+    expect(hasError).toBe(true)
 
-    const file = path.join(process.cwd(),"tests/assets/invalid.cal")
+    const hasPreview = await hasCanvasPreview()
+    expect(hasPreview).toBe(false)
 
-    await fileDrop([file])
+    const errorMsg = await getErrorMessage()
+    expect(errorMsg).toContain("invalid")
 
-    const error = await $(".error")
-
-    await expect(error).toBeExisting()
-
+    await clearState()
   })
 
+  /**
+   * TEST CASE 3: Invalid extension
+   * Expected: Error notification should appear with extension error message
+   */
+  it("TC3: invalid extension", async () => {
+    const file = path.join(process.cwd(), "tests/assets/file.txt")
 
+    await simulateFileDrop([file])
 
-  // 3 invalid extension
-  it("invalid extension", async () => {
+    const hasError = await hasErrorNotification()
+    expect(hasError).toBe(true)
 
-    const file = path.join(process.cwd(),"tests/assets/file.txt")
+    const hasPreview = await hasCanvasPreview()
+    expect(hasPreview).toBe(false)
 
-    await fileDrop([file])
+    const errorMsg = await getErrorMessage()
+    expect(errorMsg).toContain("extension")
 
-    const error = await $(".error")
-
-    await expect(error).toBeExisting()
-
+    await clearState()
   })
 
+  /**
+   * TEST CASE 4: Directory input
+   * Expected: Error notification should appear, no canvas
+   */
+  it("TC4: directory input", async () => {
+    const file = path.join(process.cwd(), "tests/assets/folder")
 
+    await simulateFileDrop([file])
 
-  // 4 directory input
-  it("directory input", async () => {
+    const hasError = await hasErrorNotification()
+    expect(hasError).toBe(true)
 
-    const file = path.join(process.cwd(),"tests/assets/folder")
+    const hasPreview = await hasCanvasPreview()
+    expect(hasPreview).toBe(false)
 
-    await fileDrop([file])
+    const errorMsg = await getErrorMessage()
+    expect(errorMsg).toContain("directory")
 
-    const error = await $(".error")
-
-    await expect(error).toBeExisting()
-
+    await clearState()
   })
 
+  // ============================================================================
+  // MULTIPLE FILE TEST CASES
+  // ============================================================================
 
-
-  // 5 over max batch size
-  it("batch size overflow", async () => {
-
+  /**
+   * TEST CASE 5: Over max batch size (> 5 files)
+   * Expected: Error notification indicating batch size exceeded
+   */
+  it("TC5: batch size overflow (> 5 files)", async () => {
     const files = []
 
-    for(let i=0;i<10;i++){
-
+    // Create 10 file paths (over max of 5)
+    for (let i = 0; i < 10; i++) {
       files.push(
-        path.join(process.cwd(),`tests/assets/file${i}.cal`)
+        path.join(process.cwd(), `tests/assets/file${i}.cal`)
       )
-
     }
 
-    await fileDrop(files)
+    await simulateFileDrop(files)
 
-    const error = await $(".error")
+    const hasError = await hasErrorNotification()
+    expect(hasError).toBe(true)
 
-    await expect(error).toBeExisting()
+    const hasPreview = await hasCanvasPreview()
+    expect(hasPreview).toBe(false)
 
+    const errorMsg = await getErrorMessage()
+    expect(errorMsg).toContain("batch")
+
+    await clearState()
   })
 
-
-
-  // 6 all valid
-  it("all files valid", async () => {
-
+  /**
+   * TEST CASE 6: All files valid
+   * Expected: Canvas preview renders, no error notifications
+   */
+  it("TC6: all files valid (multiple)", async () => {
     const files = [
-      path.join(process.cwd(),"tests/assets/a.cal"),
-      path.join(process.cwd(),"tests/assets/b.cal")
+      path.join(process.cwd(), "tests/assets/a.cal"),
+      path.join(process.cwd(), "tests/assets/b.cal"),
+      path.join(process.cwd(), "tests/assets/c.cal")
     ]
 
-    await fileDrop(files)
+    await simulateFileDrop(files)
 
-    const preview = await $("canvas")
+    const hasPreview = await hasCanvasPreview()
+    expect(hasPreview).toBe(true)
 
-    await expect(preview).toBeExisting()
+    const hasError = await hasErrorNotification()
+    expect(hasError).toBe(false)
 
+    await clearState()
   })
 
-
-
-  // 7 all invalid
-  it("all files invalid", async () => {
-
+  /**
+   * TEST CASE 7: All files invalid
+   * Expected: Error notification, no canvas
+   */
+  it("TC7: all files invalid (multiple)", async () => {
     const files = [
-      path.join(process.cwd(),"tests/assets/a.txt"),
-      path.join(process.cwd(),"tests/assets/b.txt")
+      path.join(process.cwd(), "tests/assets/a.txt"),
+      path.join(process.cwd(), "tests/assets/b.txt"),
+      path.join(process.cwd(), "tests/assets/c.txt")
     ]
 
-    await fileDrop(files)
+    await simulateFileDrop(files)
 
-    const error = await $(".error")
+    const hasError = await hasErrorNotification()
+    expect(hasError).toBe(true)
 
-    await expect(error).toBeExisting()
+    const hasPreview = await hasCanvasPreview()
+    expect(hasPreview).toBe(false)
 
+    await clearState()
   })
 
-
-
-  // 8 one invalid rest valid
-  it("1 invalid 3 valid", async () => {
-
+  /**
+   * TEST CASE 8: 1 invalid, 3 valid
+   * Expected: Canvas preview should render with valid files, invalid file ignored
+   */
+  it("TC8: 1 invalid + 3 valid (4 files total)", async () => {
     const files = [
-      path.join(process.cwd(),"tests/assets/a.cal"),
-      path.join(process.cwd(),"tests/assets/b.cal"),
-      path.join(process.cwd(),"tests/assets/c.cal"),
-      path.join(process.cwd(),"tests/assets/bad.txt")
+      path.join(process.cwd(), "tests/assets/a.cal"),
+      path.join(process.cwd(), "tests/assets/b.cal"),
+      path.join(process.cwd(), "tests/assets/c.cal"),
+      path.join(process.cwd(), "tests/assets/bad.txt")
     ]
 
-    await fileDrop(files)
+    await simulateFileDrop(files)
 
-    const preview = await $("canvas")
+    // Should render successfully with valid files
+    const hasPreview = await hasCanvasPreview()
+    expect(hasPreview).toBe(true)
 
-    await expect(preview).toBeExisting()
+    // May show warning about invalid file, but not critical error
+    const errorMsg = await getErrorMessage()
+    expect(errorMsg).not.toContain("all files invalid")
 
+    await clearState()
   })
 
-
-
-  // 9 one valid rest invalid
-  it("1 valid rest invalid", async () => {
-
+  /**
+   * TEST CASE 9: 1 valid, 3 invalid
+   * Expected: Canvas preview should render with the one valid file
+   */
+  it("TC9: 1 valid + 3 invalid (4 files total)", async () => {
     const files = [
-      path.join(process.cwd(),"tests/assets/a.cal"),
-      path.join(process.cwd(),"tests/assets/bad1.txt"),
-      path.join(process.cwd(),"tests/assets/bad2.txt"),
-      path.join(process.cwd(),"tests/assets/bad3.txt")
+      path.join(process.cwd(), "tests/assets/a.cal"),
+      path.join(process.cwd(), "tests/assets/bad1.txt"),
+      path.join(process.cwd(), "tests/assets/bad2.txt"),
+      path.join(process.cwd(), "tests/assets/bad3.txt")
     ]
 
-    await fileDrop(files)
+    await simulateFileDrop(files)
 
-    const preview = await $("canvas")
+    // Should render successfully with the one valid file
+    const hasPreview = await hasCanvasPreview()
+    expect(hasPreview).toBe(true)
 
-    await expect(preview).toBeExisting()
+    const errorMsg = await getErrorMessage()
+    expect(errorMsg).not.toContain("no valid files")
 
+    await clearState()
+  })
+
+  // ============================================================================
+  // OS-SPECIFIC TEST CASES (if needed)
+  // ============================================================================
+
+  /**
+   * Cross-platform file drop test - tests that file drop works consistently
+   * across Windows, macOS, and Linux
+   */
+  it("should handle file drop on all operating systems", async () => {
+    const file = path.join(process.cwd(), "tests/assets/valid.cal")
+
+    // This test runs on all OS - WebdriverIO handles OS differences
+    await simulateFileDrop([file])
+
+    const hasPreview = await hasCanvasPreview()
+    expect(hasPreview).toBe(true)
+
+    await clearState()
   })
 
 })
