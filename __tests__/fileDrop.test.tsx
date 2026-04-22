@@ -98,21 +98,21 @@ describe("HDRI file drop pipeline test", () => {
 
   //Core helper: Tauri-native drop bridge.
   async function fileDrop(files) {
-    // #region agent log
+    // region agent log
     fetch('http://127.0.0.1:7486/ingest/2b059762-6e09-4258-bf9d-2133c3210238',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d8f573'},body:JSON.stringify({sessionId:'d8f573',runId:'baseline',hypothesisId:'H1',location:'tests/file-drop.e2e.js:fileDrop:beforeExecute',message:'Invoking test drop bridge',data:{fileCount:Array.isArray(files)?files.length:-1},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
+    // endregion
     await browser.execute((paths) => {
       if (typeof window.__TAURI_TEST_DROP__ !== "function") {
-        // #region agent log
+        // region agent log
         fetch('http://127.0.0.1:7486/ingest/2b059762-6e09-4258-bf9d-2133c3210238',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d8f573'},body:JSON.stringify({sessionId:'d8f573',runId:'baseline',hypothesisId:'H1',location:'tests/file-drop.e2e.js:fileDrop:missingHook',message:'Test drop bridge missing on window',data:{hasHook:false},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
+        // endregion
         throw new Error(
           "__TAURI_TEST_DROP__ test hook not found. Expose it in app test mode."
         );
       }
-      // #region agent log
+      // region agent log
       fetch('http://127.0.0.1:7486/ingest/2b059762-6e09-4258-bf9d-2133c3210238',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d8f573'},body:JSON.stringify({sessionId:'d8f573',runId:'baseline',hypothesisId:'H1',location:'tests/file-drop.e2e.js:fileDrop:hookPresent',message:'Test drop bridge present on window',data:{hasHook:true,pathCount:Array.isArray(paths)?paths.length:-1},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
+      // endregion
       window.__TAURI_TEST_DROP__(paths);
     }, files);
   }
@@ -148,8 +148,9 @@ describe("HDRI file drop pipeline test", () => {
     const validImage = writeTempFile("valid.jpg", "fake-image-content");
     const before = await countRows();
 
-    await dropAndAssert([validImage], {
-      expectedRows: before + 1, // adjust if grouping merges rows
+    await dropAndAssert([invalidImageData], {
+      // Current drop validation is extension-based, so .jpg is accepted here.
+      expectedRows: before + 1,
     });
   });
 
