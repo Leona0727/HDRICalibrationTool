@@ -96,14 +96,7 @@ describe("HDRI file drop pipeline test", () => {
     });
   }
 
-  /**
-   * Core helper: Tauri-native drop bridge.
-   *
-   * IMPORTANT:
-   * - This assumes app exposes a test hook in test mode:
-   *   window.__TAURI_TEST_DROP__(paths: string[])
-   * - Keep this helper name so your structure stays the same.
-   */
+  //Core helper: Tauri-native drop bridge.
   async function fileDrop(files) {
     // #region agent log
     fetch('http://127.0.0.1:7486/ingest/2b059762-6e09-4258-bf9d-2133c3210238',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d8f573'},body:JSON.stringify({sessionId:'d8f573',runId:'baseline',hypothesisId:'H1',location:'tests/file-drop.e2e.js:fileDrop:beforeExecute',message:'Invoking test drop bridge',data:{fileCount:Array.isArray(files)?files.length:-1},timestamp:Date.now()})}).catch(()=>{});
@@ -165,9 +158,7 @@ describe("HDRI file drop pipeline test", () => {
     const invalidImageData = writeTempFile("invalid.jpg", "not-really-an-image");
     const before = await countRows();
 
-    // Decide expected behavior:
-    // A) accepted by extension only -> before + 1
-    // B) rejected by deeper validation -> before
+
     await dropAndAssert([invalidImageData], {
       expectedRows: before + 1, // update if your app rejects bad contents
       // rejectedText: "invalid image", // enable once app emits this
