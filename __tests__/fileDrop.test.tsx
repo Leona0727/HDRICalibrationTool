@@ -25,262 +25,297 @@ multiple file cases:
 
 //determine assertions as we write the tests for each case
 
-import fs from "fs";
-import os from "os";
-import path from "path";
+// test onDrop function image-matrix-input.tsx in src/components
 
-describe("HDRI file drop pipeline test", () => {
-  let tmpDir;
-
-  // Selectors (update as needed)
-  const SEL = {
-    toast: '[data-sonner-toast]', // sonner default-ish hook
-  };
-
-  before(async () => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "hdri-wdio-drop-"));
-    await browser.url("/home-page?e2e=1");
-  });
-
-  after(async () => {
-    if (tmpDir && fs.existsSync(tmpDir)) {
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-    }
-  });
-
-  beforeEach(async () => {
-    // #region agent log
-    fetch('http://127.0.0.1:7486/ingest/2b059762-6e09-4258-bf9d-2133c3210238',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d97ba5'},body:JSON.stringify({sessionId:'d97ba5',runId:'baseline',hypothesisId:'H2',location:'tests/file-drop.e2e.js:beforeEach:page',message:'Loaded home page for e2e',data:{url:'/home-page?e2e=1'},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-  });
+// __tests__/image-matrix-input.onDrop.path-9-cases.test.tsx
+import React from "react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import "@testing-library/jest-dom";
+import { ImageMatrixInput } from "../src/components/ui/image-matrix-input";
 
 
-  // Helpers: file creation + assertions
-  function writeTempFile(name, content = "sample") {
-    const filePath = path.join(tmpDir, name);
-    fs.writeFileSync(filePath, content, "utf8");
-    return filePath;
-  }
+// Shared mocks
+const mockOnChange = jest.fn();
+const mockToastError = jest.fn();
 
-  function makeTempDir(name) {
-    const dirPath = path.join(tmpDir, name);
-    fs.mkdirSync(dirPath, { recursive: true });
-    return dirPath;
-  }
+jest.mock("react-hook-form", () => ({
+	useController: () => ({
+		field: { value: [], onChange: mockOnChange },
+		fieldState: { invalid: false, error: undefined },
+	}),
+}));
 
-  async function countRows() {
-    return await browser.execute(() => {
-      const nodes = Array.from(document.querySelectorAll("div"));
-      return nodes.filter((n) => (n.textContent || "").trim().startsWith("Files:")).length;
-    });
-  }
+// deterministic path behavior for tests (OS-independent)
+const pathJoinMock = jest.fn((...parts: string[]) => parts.join("/"));
+const pathDirnameMock = jest.fn((p: string) => {
+	const n = p.replace(/\\/g, "/");
+	const i = n.lastIndexOf("/");
+	return i >= 0 ? n.slice(0, i) : "";
+});
+const pathBasenameMock = jest.fn((p: string) => {
+	return p.replace(/\\/g, "/").split("/").filter(Boolean).pop() ?? "";
+});
+const pathExtnameMock = jest.fn((p: string) => {
+	const i = p.lastIndexOf(".");
+	return i >= 0 ? p.slice(i) : "";
+});
 
-  async function expectRows(expected) {
-    await browser.waitUntil(async () => (await countRows()) === expected, {
-      timeout: 5000,
-      timeoutMsg: `Expected ${expected} image set rows`,
-    });
-  }
+jest.mock("path", () => ({
+	join: (...args: string[]) => pathJoinMock(...args),
+	dirname: (p: string) => pathDirnameMock(p),
+	basename: (p: string) => pathBasenameMock(p),
+	extname: (p: string) => pathExtnameMock(p),
+}));
 
-  async function expectToastIncludes(text) {
-    await browser.waitUntil(async () => {
-      const toasts = await $$(SEL.toast);
-      for (const t of toasts) {
-        const msg = await t.getText();
-        if (msg.includes(text)) return true;
-      }
-      return false;
-    }, {
-      timeout: 5000,
-      timeoutMsg: `Expected toast containing "${text}"`,
-    });
-  }
+jest.mock("../src/lib/image-file-extensions", () => ({
+	imageFileExtensions: ["jpg", "jpeg", "tif", "tiff", "cr2", "raw"],
+}));
 
-  /**
-   * Core helper: Tauri-native drop bridge.
-   *
-   * IMPORTANT:
-   * - This assumes app exposes a test hook in test mode:
-   *   window.__TAURI_TEST_DROP__(paths: string[])
-   * - Keep this helper name so your structure stays the same.
-   */
-  async function fileDrop(files) {
-    // #region agent log
-    fetch('http://127.0.0.1:7486/ingest/2b059762-6e09-4258-bf9d-2133c3210238',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d8f573'},body:JSON.stringify({sessionId:'d8f573',runId:'baseline',hypothesisId:'H1',location:'tests/file-drop.e2e.js:fileDrop:beforeExecute',message:'Invoking test drop bridge',data:{fileCount:Array.isArray(files)?files.length:-1},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-    return await browser.execute((paths) => {
-      if (typeof window.__TAURI_TEST_DROP__ !== "function") {
-        // #region agent log
-        fetch('http://127.0.0.1:7486/ingest/2b059762-6e09-4258-bf9d-2133c3210238',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d8f573'},body:JSON.stringify({sessionId:'d8f573',runId:'baseline',hypothesisId:'H1',location:'tests/file-drop.e2e.js:fileDrop:missingHook',message:'Test drop bridge missing on window',data:{hasHook:false},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
-        return false;
-      }
-      // #region agent log
-      fetch('http://127.0.0.1:7486/ingest/2b059762-6e09-4258-bf9d-2133c3210238',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d8f573'},body:JSON.stringify({sessionId:'d8f573',runId:'baseline',hypothesisId:'H1',location:'tests/file-drop.e2e.js:fileDrop:hookPresent',message:'Test drop bridge present on window',data:{hasHook:true,pathCount:Array.isArray(paths)?paths.length:-1},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
-      window.__TAURI_TEST_DROP__(paths);
-      return true;
-    }, files);
-  }
+jest.mock("sonner", () => ({
+	toast: {
+		error: (...args: unknown[]) => mockToastError(...args),
+	},
+}));
 
-  // Optional composed helper for common pattern
-  async function dropAndAssert(files, { expectedRows, rejectedText } = {}) {
-    const beforeRows = await countRows();
-    const didDrop = await fileDrop(files);
-    if (!didDrop) {
-      return { beforeRows, afterRows: beforeRows };
-    }
+const statMock = jest.fn();
+const readDirMock = jest.fn();
 
-    if (typeof expectedRows === "number") {
-      try {
-        await expectRows(expectedRows);
-      } catch {
-        // non-blocking assertion path for exploratory e2e coverage
-      }
-    } else {
-      // default: at least no crash; wait a beat for UI settle
-      await browser.pause(200);
-    }
+jest.mock("@tauri-apps/plugin-fs", () => ({
+	stat: (...args: unknown[]) => statMock(...args),
+	readDir: (...args: unknown[]) => readDirMock(...args),
+}));
 
-    if (rejectedText) {
-      try {
-        await expectToastIncludes(rejectedText);
-      } catch {
-        // non-blocking assertion path for exploratory e2e coverage
-      }
-    }
+// Replace TauriDropzone with explicit scenario buttons
+jest.mock("../src/components/ui/tauri-dropzone", () => ({
+	TauriDropzone: ({ onDrop }: { onDrop: (files: string[]) => Promise<void> }) => (
+		<div>
+			<button data-testid="case-1" onClick={() => onDrop(["/sceneA/valid1.jpg"])}>
+				case-1
+			</button>
+			<button data-testid="case-2" onClick={() => onDrop(["/sceneA/valid-but-invalid-content.jpg"])}>
+				case-2
+			</button>
+			<button data-testid="case-3" onClick={() => onDrop(["/sceneA/not-image.txt"])}>
+				case-3
+			</button>
+			<button data-testid="case-4" onClick={() => onDrop(["/batch/setDir"])}>
+				case-4
+			</button>
+			<button
+				data-testid="case-5"
+				onClick={() =>
+					onDrop([
+						"/overMax/a.jpg",
+						"/overMax/b.jpg",
+						"/overMax/c.jpg",
+						"/overMax/d.jpg",
+						"/overMax/e.jpg",
+						"/overMax/f.jpg",
+					])
+				}
+			>
+				case-5
+			</button>
+			<button
+				data-testid="case-6"
+				onClick={() => onDrop(["/allValid/a.jpg", "/allValid/b.tif", "/allValid/c.cr2"])}
+			>
+				case-6
+			</button>
+			<button
+				data-testid="case-7"
+				onClick={() => onDrop(["/allInvalid/a.txt", "/allInvalid/b.csv", "/allInvalid/c.docx"])}
+			>
+				case-7
+			</button>
+			<button
+				data-testid="case-8"
+				onClick={() => onDrop(["/mixA/ok1.jpg", "/mixA/ok2.tif", "/mixA/ok3.raw", "/mixA/bad1.txt"])}
+			>
+				case-8
+			</button>
+			<button
+				data-testid="case-9"
+				onClick={() => onDrop(["/mixB/ok1.jpg", "/mixB/bad1.txt", "/mixB/bad2.csv", "/mixB/bad3.docx"])}
+			>
+				case-9
+			</button>
+		</div>
+	),
+}));
 
-    const afterRows = await countRows();
-    return { beforeRows, afterRows };
-  }
+// simplify unrelated UI wrappers
+jest.mock("../src/components/ui/field", () => ({
+	Field: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+	FieldContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+	FieldError: () => null,
+}));
+jest.mock("../src/components/ui/context-menu", () => ({
+	ContextMenu: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+	ContextMenuTrigger: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+	ContextMenuContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+	ContextMenuItem: ({ children, onClick }: any) => <button onClick={onClick}>{children}</button>,
+}));
+jest.mock("../src/components/ui/image-set-preview", () => ({
+	ImageSetPreview: () => null,
+}));
 
+describe("ImageMatrixInput onDrop - 9 mock cases with Tauri + path checks", () => {
+	beforeEach(() => {
+		jest.clearAllMocks();
 
-  // 0) Smoke: drop area visible
-  it("finds the dropping file ui area", async () => {
-    const hookReady = await browser.execute(
-      () => typeof window.__TAURI_TEST_DROP__ === "function"
-    );
-    await expect(typeof hookReady === "boolean").toBe(true);
-  });
+		// default: path is a file
+		statMock.mockImplementation(async (p: string) => ({
+			isFile: true,
+			name: p.replace(/\\/g, "/").split("/").pop() ?? "",
+		}));
 
-  // 1) valid extension + valid content
-  it("1) valid extension + valid content", async () => {
-    const validImage = writeTempFile("valid.jpg", "fake-image-content");
-    const before = await countRows();
+		readDirMock.mockResolvedValue([]);
+	});
 
-    await dropAndAssert([validImage], {
-      expectedRows: before + 1, // adjust if grouping merges rows
-    });
-  });
+	function renderTarget() {
+		render(<ImageMatrixInput control={{} as any} name={"inputSets" as any} />);
+	}
 
-  // 2) valid extension + invalid content
-  it("2) valid extension + invalid content", async () => {
-    const invalidImageData = writeTempFile("invalid.jpg", "not-really-an-image");
-    const before = await countRows();
+	test("Case 1: valid extension and valid input path", async () => {
+		renderTarget();
+		fireEvent.click(screen.getByTestId("case-1"));
 
-    await dropAndAssert([invalidImageData], {
-      // Current drop validation is extension-based, so .jpg is accepted here.
-      expectedRows: before + 1,
-    });
-  });
+		await waitFor(() => expect(mockOnChange).toHaveBeenCalledTimes(1));
 
-  // 3) invalid extension
-  it("3) invalid extension", async () => {
-    const txtFile = writeTempFile("file.txt", "plain text");
-    const before = await countRows();
+		// path checks
+		expect(pathDirnameMock).toHaveBeenCalledWith("/sceneA/valid1.jpg");
+		expect(pathBasenameMock).toHaveBeenCalledWith("/sceneA");
+		expect(pathBasenameMock).toHaveBeenCalledWith("/sceneA/valid1.jpg");
 
-    await dropAndAssert([txtFile], {
-      expectedRows: before,
-      rejectedText: "not an acceptable image file",
-    });
-  });
+		expect(mockOnChange.mock.calls[0][0]).toEqual([
+			{ name: "sceneA", files: ["/sceneA/valid1.jpg"] },
+		]);
+	});
 
-  // 4) directory input
-  it("4) directory input", async () => {
-    const dirPath = makeTempDir("folder");
-    writeTempFile(path.join("folder", "a.jpg"), "a");
-    writeTempFile(path.join("folder", "b.txt"), "b");
+	test("Case 2: valid extension but invalid content (simulated rejection)", async () => {
+		// Current code does not inspect file content.
+		// Simulate rejection by returning isFile=false for this path.
+		statMock.mockResolvedValue({ isFile: false, name: "valid-but-invalid-content.jpg" });
 
-    const before = await countRows();
-    await dropAndAssert([dirPath], {
-      expectedRows: before + 1, // one group/row for folder
-      rejectedText: "not an acceptable image file", // for b.txt
-    });
-  });
+		renderTarget();
+		fireEvent.click(screen.getByTestId("case-2"));
 
-  // 5) batch size overflow
-  it("5) batch size overflow", async () => {
-    const files = [];
-    for (let i = 0; i < 10; i += 1) {
-      files.push(writeTempFile(`file${i}.jpg`, `img-${i}`));
-    }
+		await waitFor(() => expect(mockOnChange).toHaveBeenCalledTimes(1));
 
-    const before = await countRows();
+		expect(mockOnChange.mock.calls[0][0]).toEqual([{ name: "sceneA", files: [] }]);
+	});
 
-    // If no max batch rule exists yet, this will currently pass as accepted.
-    // Change expected once max-size validation exists.
-    await dropAndAssert(files, {
-      expectedRows: before + 1,
-      // rejectedText: "batch size exceeded",
-    });
-  });
+	test("Case 3: invalid extension path", async () => {
+		renderTarget();
+		fireEvent.click(screen.getByTestId("case-3"));
 
-  // 6) all files valid
-  it("6) all files valid", async () => {
-    const files = [
-      writeTempFile("a.jpg", "a"),
-      writeTempFile("b.jpg", "b"),
-    ];
+		await waitFor(() => expect(mockOnChange).toHaveBeenCalledTimes(1));
 
-    const before = await countRows();
-    await dropAndAssert(files, {
-      expectedRows: before + 1,
-    });
-  });
+		expect(pathExtnameMock).toHaveBeenCalledWith("not-image.txt");
+		expect(mockOnChange.mock.calls[0][0]).toEqual([{ name: "sceneA", files: [] }]);
+		expect(mockToastError).toHaveBeenCalled();
+	});
 
-  // 7) all files invalid
-  it("7) all files invalid", async () => {
-    const files = [
-      writeTempFile("a.txt", "a"),
-      writeTempFile("b.txt", "b"),
-    ];
+	test("Case 4: input is a directory, readDir + join path mapping", async () => {
+		statMock.mockResolvedValue({ isFile: false, name: "setDir" });
+		readDirMock.mockResolvedValue([
+			{ name: "a.jpg", isFile: true },
+			{ name: "b.txt", isFile: true },
+			{ name: "c.tiff", isFile: true },
+		]);
 
-    const before = await countRows();
-    await dropAndAssert(files, {
-      expectedRows: before,
-      rejectedText: "not an acceptable image file",
-    });
-  });
+		renderTarget();
+		fireEvent.click(screen.getByTestId("case-4"));
 
-  // 8) 1 invalid, 3 valid
-  it("8) 1 invalid 3 valid", async () => {
-    const files = [
-      writeTempFile("a.jpg", "a"),
-      writeTempFile("b.jpg", "b"),
-      writeTempFile("c.jpg", "c"),
-      writeTempFile("bad.txt", "bad"),
-    ];
+		await waitFor(() => expect(mockOnChange).toHaveBeenCalledTimes(1));
 
-    const before = await countRows();
-    await dropAndAssert(files, {
-      expectedRows: before + 1,
-      rejectedText: "not an acceptable image file",
-    });
-  });
+		expect(readDirMock).toHaveBeenCalledWith("/batch/setDir");
+		expect(pathJoinMock).toHaveBeenCalledWith("/batch/setDir", "a.jpg");
+		expect(pathJoinMock).toHaveBeenCalledWith("/batch/setDir", "b.txt");
+		expect(pathJoinMock).toHaveBeenCalledWith("/batch/setDir", "c.tiff");
+		expect(pathBasenameMock).toHaveBeenCalledWith("/batch/setDir");
 
-  // 9) 1 valid, rest invalid
-  it("9) 1 valid rest invalid", async () => {
-    const files = [
-      writeTempFile("a.jpg", "a"),
-      writeTempFile("bad1.txt", "bad1"),
-      writeTempFile("bad2.txt", "bad2"),
-      writeTempFile("bad3.txt", "bad3"),
-    ];
+		expect(mockOnChange.mock.calls[0][0]).toEqual([
+			{ name: "setDir", files: ["/batch/setDir/a.jpg", "/batch/setDir/c.tiff"] },
+		]);
+	});
 
-    const before = await countRows();
-    await dropAndAssert(files, {
-      expectedRows: before + 1, // adjust if grouped
-      rejectedText: "not an acceptable image file",
-    });
-  });
+	test("Case 5: over max batch size (document current behavior)", async () => {
+		// Current onDrop has no max-size validation, so all files are accepted if extension is valid.
+		renderTarget();
+		fireEvent.click(screen.getByTestId("case-5"));
+
+		await waitFor(() => expect(mockOnChange).toHaveBeenCalledTimes(1));
+
+		expect(mockOnChange.mock.calls[0][0]).toEqual([
+			{
+				name: "overMax",
+				files: [
+					"/overMax/a.jpg",
+					"/overMax/b.jpg",
+					"/overMax/c.jpg",
+					"/overMax/d.jpg",
+					"/overMax/e.jpg",
+					"/overMax/f.jpg",
+				],
+			},
+		]);
+	});
+
+	test("Case 6: every input file is valid", async () => {
+		renderTarget();
+		fireEvent.click(screen.getByTestId("case-6"));
+
+		await waitFor(() => expect(mockOnChange).toHaveBeenCalledTimes(1));
+
+		expect(mockOnChange.mock.calls[0][0]).toEqual([
+			{
+				name: "allValid",
+				files: ["/allValid/a.jpg", "/allValid/b.tif", "/allValid/c.cr2"],
+			},
+		]);
+	});
+
+	test("Case 7: every input file is invalid", async () => {
+		renderTarget();
+		fireEvent.click(screen.getByTestId("case-7"));
+
+		await waitFor(() => expect(mockOnChange).toHaveBeenCalledTimes(1));
+
+		expect(mockOnChange.mock.calls[0][0]).toEqual([
+			{
+				name: "allInvalid",
+				files: [],
+			},
+		]);
+	});
+
+	test("Case 8: one invalid and three valid files", async () => {
+		renderTarget();
+		fireEvent.click(screen.getByTestId("case-8"));
+
+		await waitFor(() => expect(mockOnChange).toHaveBeenCalledTimes(1));
+
+		expect(mockOnChange.mock.calls[0][0]).toEqual([
+			{
+				name: "mixA",
+				files: ["/mixA/ok1.jpg", "/mixA/ok2.tif", "/mixA/ok3.raw"],
+			},
+		]);
+	});
+
+	test("Case 9: one valid and three invalid files", async () => {
+		renderTarget();
+		fireEvent.click(screen.getByTestId("case-9"));
+
+		await waitFor(() => expect(mockOnChange).toHaveBeenCalledTimes(1));
+
+		expect(mockOnChange.mock.calls[0][0]).toEqual([
+			{
+				name: "mixB",
+				files: ["/mixB/ok1.jpg"],
+			},
+		]);
+	});
 });
