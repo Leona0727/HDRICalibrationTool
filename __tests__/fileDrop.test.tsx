@@ -31,7 +31,7 @@ multiple file cases:
 import React from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
-import { ImageMatrixInput } from "../src/components/ui/image-matrix-input";
+import { onDrop } from "../src/components/ui/image-matrix-input";
 
 
 // Shared mocks
